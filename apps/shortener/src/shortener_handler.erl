@@ -40,7 +40,7 @@ handle_request(OperationID, Req, Context, _Opts) ->
         AuthContext = get_auth_context(Context),
         WoodyCtx = create_woody_ctx(Req, AuthContext),
         Slug = prefetch_slug(Req, WoodyCtx),
-        case shortener_auth:authorize_operation(OperationID, Slug, AuthContext) of
+        case shortener_auth:authorize_operation(OperationID, Slug, AuthContext, WoodyCtx) of
             ok ->
                 SubjectID = get_subject_id(AuthContext),
                 process_request(OperationID, Req, Slug, SubjectID, WoodyCtx);

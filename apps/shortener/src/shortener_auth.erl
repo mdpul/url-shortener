@@ -1,7 +1,7 @@
 -module(shortener_auth).
 
 -export([authorize_api_key/2]).
--export([authorize_operation/3]).
+-export([authorize_operation/4]).
 
 -type context() :: shortener_authorizer_jwt:t().
 -type claims() :: shortener_authorizer_jwt:claims().
@@ -42,14 +42,21 @@ parse_api_key(ApiKey) ->
 authorize_api_key(_OperationID, bearer, Token) ->
     shortener_authorizer_jwt:verify(Token).
 
--spec authorize_operation(OperationID, Slug, Context) -> ok | {error, forbidden} when
+-spec authorize_operation(OperationID, Slug, Context, WoodyCtx) -> ok | {error, forbidden} when
     OperationID :: swag_server:operation_id(),
     Slug :: shortener_slug:slug() | no_slug,
-    Context :: context().
-authorize_operation(OperationID, Slug, {{SubjectID, ACL}, _Claims}) ->
+    Context :: context(),
+    WoodyCtx :: woody_context:ctx().
+authorize_operation(OperationID, Slug, {{SubjectID, _ACL}, _Claims}, WoodyCtx) ->
     Owner = get_slug_owner(Slug),
-    Permissions = shortener_acl:match(['shortened-urls'], ACL),
-    case is_operation_permitted(OperationID, SubjectID, Owner, Permissions) of
+    ID = get_slug_id(Slug),
+    JudgeContext = #{
+        user_id => SubjectID,
+        operation_id => OperationID,
+        id => ID,
+        owner => Owner
+    },
+    case shortener_bouncer:judge(JudgeContext, WoodyCtx) of
         true ->
             ok;
         false ->
@@ -62,13 +69,8 @@ get_slug_owner(no_slug) ->
 get_slug_owner(#{owner := Owner}) ->
     Owner.
 
-is_operation_permitted('ShortenUrl', _SubjectID, undefined, Ps) ->
-    lists:member(write, Ps);
-is_operation_permitted('DeleteShortenedUrl', _SubjectID, undefined, Ps) ->
-    lists:member(write, Ps);
-is_operation_permitted('DeleteShortenedUrl', SubjectID, Owner, Ps) ->
-    (SubjectID == Owner) and lists:member(write, Ps);
-is_operation_permitted('GetShortenedUrl', _SubjectID, undefined, Ps) ->
-    lists:member(read, Ps);
-is_operation_permitted('GetShortenedUrl', SubjectID, Owner, Ps) ->
-    (SubjectID == Owner) and lists:member(read, Ps).
+-spec get_slug_id(shortener_slug:slug() | no_slug) -> shortener_slug:id() | undefined.
+get_slug_id(no_slug) ->
+    undefined;
+get_slug_id(#{id := ID}) ->
+    ID.
