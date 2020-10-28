@@ -52,7 +52,7 @@ authorize_operation(OperationID, Slug, {{SubjectID, _ACL}, _Claims}, WoodyCtx) -
     ID = get_slug_id(Slug),
     JudgeContext = #{
         user_id => SubjectID,
-        operation_id => OperationID,
+        operation_id => term_to_binary(OperationID),
         id => ID,
         owner => Owner
     },

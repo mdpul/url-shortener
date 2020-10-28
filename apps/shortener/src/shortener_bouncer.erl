@@ -147,7 +147,7 @@ call_service(ServiceName, Function, Args, Context0, EventHandler) ->
 call_service(ServiceName, Function, Args, Context, EventHandler, Retry) ->
     Url = get_service_url(ServiceName),
     Service = get_service_modname(ServiceName),
-    Request = {Service, Function, Args},
+    Request = {Service, Function, {bin, term_to_binary(Args)}},
     try
         woody_client:call(
             Request,
