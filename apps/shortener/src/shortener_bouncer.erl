@@ -63,26 +63,28 @@ judge_(JudgeContext, WoodyContext) ->
 %%
 
 collect_judge_context(JudgeContext = #{operation_id := ID, user_id := UserID}, WoodyContext) ->
+    ContextFragment = #bctx_v1_ContextFragment{
+        vsn = 1,
+        auth = #bctx_v1_Auth{
+            method = <<"SessionToken">>
+        },
+        user = collect_user_context(UserID, WoodyContext),
+        requester = #bctx_v1_Requester{ip = <<"">>},
+        shortener = #bctx_v1_ContextUrlShortener{op = #bctx_v1_UrlShortenerOperation{
+            id = ID,
+            shortened_url = #bctx_v1_ShortenedUrl{
+                id = maps:get(id, JudgeContext, undefined),
+                owner = #bctx_v1_Entity{
+                    id = maps:get(owner, JudgeContext, undefined)
+                }
+            }
+        }}
+    },
+    Type = {struct, struct, {bouncer_context_v1_thrift, 'ContextFragment'}},
     #{
         <<"api">> => #bctx_ContextFragment{
             type = v1_thrift_binary,
-            content = #bctx_v1_ContextFragment{
-                vsn = 1,
-                auth = #bctx_v1_Auth{
-                    method = <<"SessionToken">>
-                },
-                user = collect_user_context(UserID, WoodyContext),
-                requester = #bctx_v1_Requester{ip = <<"">>},
-                shortener = #bctx_v1_ContextUrlShortener{op = #bctx_v1_UrlShortenerOperation{
-                    id = ID,
-                    shortened_url = #bctx_v1_ShortenedUrl{
-                        id = maps:get(id, JudgeContext, undefined),
-                        owner = #bctx_v1_Entity{
-                            id = maps:get(owner, JudgeContext, undefined)
-                        }
-                    }
-                }}
-            }
+            content = serialize(Type, ContextFragment)
         }
     }.
 
@@ -106,6 +108,24 @@ parse_judgement(#bdcs_Judgement{resolution = allowed}) ->
     true;
 parse_judgement(#bdcs_Judgement{resolution = forbidden}) ->
     false.
+
+%%
+
+-spec serialize(_ThriftType, term()) -> binary().
+
+serialize(Type, Data) ->
+    {ok, Trans} = thrift_membuffer_transport:new(),
+    {ok, Proto} = new_protocol(Trans),
+    case thrift_protocol:write(Proto, {Type, Data}) of
+        {NewProto, ok} ->
+            {_, {ok, Result}} = thrift_protocol:close_transport(NewProto),
+            Result;
+        {_NewProto, {error, Reason}} ->
+            erlang:error({thrift, {protocol, Reason}})
+    end.
+
+new_protocol(Trans) ->
+    thrift_binary_protocol:new(Trans, [{strict_read, true}, {strict_write, true}]).
 
 %%
 
