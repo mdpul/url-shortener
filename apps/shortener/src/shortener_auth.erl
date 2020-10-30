@@ -1,7 +1,7 @@
 -module(shortener_auth).
 
 -export([authorize_api_key/2]).
--export([authorize_operation/4]).
+-export([authorize_operation/5]).
 
 -type context() :: shortener_authorizer_jwt:t().
 -type claims() :: shortener_authorizer_jwt:claims().
@@ -42,19 +42,23 @@ parse_api_key(ApiKey) ->
 authorize_api_key(_OperationID, bearer, Token) ->
     shortener_authorizer_jwt:verify(Token).
 
--spec authorize_operation(OperationID, Slug, Context, WoodyCtx) -> ok | {error, forbidden} when
+-spec authorize_operation(OperationID, Slug, Context, WoodyCtx, IpAddress) -> ok | {error, forbidden} when
     OperationID :: swag_server:operation_id(),
     Slug :: shortener_slug:slug() | no_slug,
     Context :: context(),
-    WoodyCtx :: woody_context:ctx().
-authorize_operation(OperationID, Slug, {{SubjectID, _ACL}, _Claims}, WoodyCtx) ->
+    WoodyCtx :: woody_context:ctx(),
+    IpAddress :: string() | undefined.
+authorize_operation(OperationID, Slug, {{SubjectID, _ACL}, _Claims = #{<<"exp">> := Exp}}, WoodyCtx, IpAddress) ->
     Owner = get_slug_owner(Slug),
     ID = get_slug_id(Slug),
     JudgeContext = #{
-        user_id => SubjectID,
-        operation_id => term_to_binary(OperationID),
-        id => ID,
-        owner => Owner
+        builders => [
+            shortener_bouncer:make_env_context_builder(),
+            shortener_bouncer:make_auth_context_builder(<<"SessionToken">>, Exp),
+            shortener_bouncer:make_user_context_builder(SubjectID, WoodyCtx),
+            shortener_bouncer:make_requester_context_builder(IpAddress),
+            shortener_bouncer:make_shortener_context_builder(term_to_binary(OperationID), ID, Owner)
+        ]
     },
     case shortener_bouncer:judge(JudgeContext, WoodyCtx) of
         true ->

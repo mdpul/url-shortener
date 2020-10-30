@@ -6,28 +6,41 @@
 %% API
 
 -export([judge/2]).
+-export([make_env_context_builder/0]).
+-export([make_auth_context_builder/2]).
+-export([make_user_context_builder/2]).
+-export([make_requester_context_builder/1]).
+-export([make_shortener_context_builder/3]).
+
+%%
+
+-define(APP, shortener).
+-define(BLANK_CONTEXT, #bctx_v1_ContextFragment{vsn = 1}).
 
 %%
 
 -type operation_id() :: binary().
+-type auth_method() :: binary().
+-type timestamp() :: pos_integer().
+-type ip() :: string() | undefined.
 -type user_id() :: binary().
 -type id() :: shortener_slug:id().
 -type owner() :: shortener_slug:owner().
 -type woody_context() :: woody_context:ctx().
 
--type judge_context() :: #{
-    user_id := user_id(),
-    operation_id := operation_id(),
-    id => id(),
-    owner => owner()
-}.
+-type context_fragment_id() :: binary().
+-type context_fragment() :: bouncer_context_v1_thrift:'ContextFragment'().
+-type context_builder() :: fun((context_fragment()) -> {context_fragment_id(), context_fragment()}).
 
--define(APP, shortener).
+-type judge_context() :: #{
+    builders := [context_builder()]
+}.
 
 -type service_name() :: atom().
 
 -export_type([service_name/0]).
 -export_type([judge_context/0]).
+-export_type([context_builder/0]).
 
 -spec judge(judge_context(), woody_context()) ->
     boolean().
@@ -48,7 +61,7 @@ judge(JudgeContext, WoodyContext) ->
         | {context, invalid}}.
 
 judge_(JudgeContext, WoodyContext) ->
-    Args = collect_judge_context(JudgeContext, WoodyContext),
+    Args = collect_judge_context(JudgeContext),
     case call_service(bouncer, 'Judge', [Args], WoodyContext) of
         {ok, Judgement} ->
             {ok, parse_judgement(Judgement)};
@@ -62,47 +75,98 @@ judge_(JudgeContext, WoodyContext) ->
 
 %%
 
-collect_judge_context(JudgeContext = #{operation_id := ID, user_id := UserID}, WoodyContext) ->
-    ContextFragment = #bctx_v1_ContextFragment{
-        vsn = 1,
-        auth = #bctx_v1_Auth{
-            method = <<"SessionToken">>
-        },
-        user = collect_user_context(UserID, WoodyContext),
-        requester = #bctx_v1_Requester{ip = <<"">>},
-        shortener = #bctx_v1_ContextUrlShortener{op = #bctx_v1_UrlShortenerOperation{
-            id = ID,
-            shortened_url = #bctx_v1_ShortenedUrl{
-                id = maps:get(id, JudgeContext, undefined),
-                owner = #bctx_v1_Entity{
-                    id = maps:get(owner, JudgeContext, undefined)
-                }
+collect_judge_context(#{builders := Builders}) ->
+    Type = {struct, struct, {bouncer_context_v1_thrift, 'ContextFragment'}},
+    lists:foldl(fun(Builder, Acc0) ->
+        {FragmentID, Fragment} = Builder(?BLANK_CONTEXT),
+        Acc0#{FragmentID => #bctx_ContextFragment{
+            type = v1_thrift_binary,
+            content = serialize(Type, Fragment)
+        }}
+    end, #{}, Builders).
+
+%% Builders
+
+-spec make_env_context_builder() ->
+    context_builder().
+make_env_context_builder() ->
+    fun(BlankContext) ->
+        {<<"env">>, BlankContext#bctx_v1_ContextFragment{
+            env = #bctx_v1_Environment{
+                now = genlib_rfc3339:format(genlib_time:unow(), second)
             }
         }}
-    },
-    Type = {struct, struct, {bouncer_context_v1_thrift, 'ContextFragment'}},
-    #{
-        <<"api">> => #bctx_ContextFragment{
-            type = v1_thrift_binary,
-            content = serialize(Type, ContextFragment)
-        }
-    }.
+    end.
 
-collect_user_context(UserID, _WoodyContext) ->
-    %% TODO add org managment call here
-    #bctx_v1_User{
-        id = UserID,
-        orgs = [
-            #bctx_v1_Organization{
-                %% UserID = PartyID = OrganizationID
-                id = UserID,
-                owner = #bctx_v1_Entity{
-                    %% User is organization owner
-                    id = UserID
-                }
+-spec make_auth_context_builder(auth_method(), timestamp()) ->
+    context_builder().
+make_auth_context_builder(Method, Expiration) ->
+    fun(BlankContext) ->
+        {<<"auth">>, BlankContext#bctx_v1_ContextFragment{
+            auth = #bctx_v1_Auth{
+                method = Method,
+                expiration = genlib_rfc3339:format(Expiration, second)
             }
-        ]
-    }.
+        }}
+    end.
+
+-spec make_user_context_builder(user_id(), woody_context()) ->
+    context_builder().
+make_user_context_builder(UserID, _WoodyContext) ->
+    %% TODO add org managment call here
+    fun(BlankContext) ->
+        {<<"user">>, BlankContext#bctx_v1_ContextFragment{
+            user = #bctx_v1_User{
+                id = UserID,
+                orgs = [
+                    #bctx_v1_Organization{
+                        %% UserID = PartyID = OrganizationID
+                        id = UserID,
+                        owner = #bctx_v1_Entity{
+                            %% User is organization owner
+                            id = UserID
+                        }
+                    }
+                ]
+            }
+        }}
+    end.
+
+-spec make_requester_context_builder(ip()) ->
+    context_builder().
+make_requester_context_builder(IP0) ->
+    IP1 = case IP0 of
+        undefined ->
+            undefined;
+        IP0 ->
+            list_to_binary(IP0)
+    end,
+    fun(BlankContext) ->
+        {<<"requester">>, BlankContext#bctx_v1_ContextFragment{
+            requester = #bctx_v1_Requester{
+                ip = IP1
+            }
+        }}
+    end.
+
+-spec make_shortener_context_builder(operation_id(), id() | undefined, owner() | undefined) ->
+    context_builder().
+make_shortener_context_builder(OperationID, ID, OwnerID) ->
+    fun(BlankContext) ->
+        {<<"shortener">>, BlankContext#bctx_v1_ContextFragment{
+            shortener = #bctx_v1_ContextUrlShortener{op = #bctx_v1_UrlShortenerOperation{
+                id = OperationID,
+                shortened_url = #bctx_v1_ShortenedUrl{
+                    id = ID,
+                    owner = #bctx_v1_Entity{
+                        id = OwnerID
+                    }
+                }
+            }}
+        }}
+    end.
+
+%%
 
 parse_judgement(#bdcs_Judgement{resolution = allowed}) ->
     true;
