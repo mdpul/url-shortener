@@ -35,8 +35,7 @@
 
 %% tests descriptions
 
--spec init([]) ->
-    {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
+-spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
     {ok, {#{strategy => one_for_all, intensity => 1, period => 1}, []}}.
 
@@ -126,8 +125,7 @@ end_per_suite(C) ->
 init_per_testcase(_Name, C) ->
     [{test_sup, start_mocked_service_sup(?MODULE)} | C].
 
--spec end_per_testcase(test_case_name(), config()) ->
-    config().
+-spec end_per_testcase(test_case_name(), config()) -> config().
 end_per_testcase(_Name, C) ->
     stop_mocked_service_sup(?config(test_sup, C)),
     ok.
@@ -139,9 +137,7 @@ start_mocked_service_sup(Module) ->
     _ = unlink(SupPid),
     SupPid.
 
--spec stop_mocked_service_sup(pid()) ->
-    _.
-
+-spec stop_mocked_service_sup(pid()) -> _.
 stop_mocked_service_sup(SupPid) ->
     exit(SupPid, shutdown).
 
@@ -165,9 +161,12 @@ failed_authorization(C) ->
     {ok, 401, _, _} = get_shortened_url(<<"42">>, C1).
 
 insufficient_permissions(C) ->
-    mock_services([
-        {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = forbidden}} end}
-    ], C),
+    mock_services(
+        [
+            {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = forbidden}} end}
+        ],
+        C
+    ),
     C1 = set_api_auth_token(insufficient_permissions, [], C),
     Params = construct_params(<<"https://oops.io/">>),
     {ok, 403, _, _} = shorten_url(Params, C1),
@@ -175,18 +174,21 @@ insufficient_permissions(C) ->
     {ok, 403, _, _} = get_shortened_url(<<"42">>, C1).
 
 readonly_permissions(C) ->
-    mock_services([
-        {bouncer, fun('Judge', {_RulesetID, Fragments}) ->
-            case get_operation_id(Fragments) of
-                <<"ShortenUrl">> ->
-                    {ok, #bdcs_Judgement{resolution = allowed}};
-                <<"GetShortenedUrl">> ->
-                    {ok, #bdcs_Judgement{resolution = allowed}};
-                <<"DeleteShortenedUrl">> ->
-                    {ok, #bdcs_Judgement{resolution = forbidden}}
-            end
-        end}
-    ], C),
+    mock_services(
+        [
+            {bouncer, fun('Judge', {_RulesetID, Fragments}) ->
+                case get_operation_id(Fragments) of
+                    <<"ShortenUrl">> ->
+                        {ok, #bdcs_Judgement{resolution = allowed}};
+                    <<"GetShortenedUrl">> ->
+                        {ok, #bdcs_Judgement{resolution = allowed}};
+                    <<"DeleteShortenedUrl">> ->
+                        {ok, #bdcs_Judgement{resolution = forbidden}}
+                end
+            end}
+        ],
+        C
+    ),
     C1 = set_api_auth_token(readonly_permissions, [read, write], C),
     Params = construct_params(<<"https://oops.io/">>),
     {ok, 201, _, #{<<"id">> := ID}} = shorten_url(Params, C1),
@@ -195,9 +197,12 @@ readonly_permissions(C) ->
     {ok, 403, _, _} = delete_shortened_url(ID, C2).
 
 successful_redirect(C) ->
-    mock_services([
-        {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
-    ], C),
+    mock_services(
+        [
+            {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
+        ],
+        C
+    ),
     C1 = set_api_auth_token(successful_redirect, [read, write], C),
     SourceUrl = <<"https://example.com/">>,
     Params = construct_params(SourceUrl),
@@ -207,9 +212,12 @@ successful_redirect(C) ->
     {<<"location">>, SourceUrl} = lists:keyfind(<<"location">>, 1, Headers).
 
 successful_delete(C) ->
-    mock_services([
-        {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
-    ], C),
+    mock_services(
+        [
+            {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
+        ],
+        C
+    ),
     C1 = set_api_auth_token(successful_delete, [read, write], C),
     Params = construct_params(<<"https://oops.io/">>),
     {ok, 201, _, #{<<"id">> := ID, <<"shortenedUrl">> := ShortUrl}} = shorten_url(Params, C1),
@@ -218,9 +226,12 @@ successful_delete(C) ->
     {ok, 404, _, _} = hackney:request(get, ShortUrl).
 
 fordidden_source_url(C) ->
-    mock_services([
-        {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
-    ], C),
+    mock_services(
+        [
+            {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
+        ],
+        C
+    ),
     C1 = set_api_auth_token(fordidden_source_url, [read, write], C),
     {ok, 201, _, #{}} = shorten_url(construct_params(<<"http://localhost/hack?id=42">>), C1),
     {ok, 201, _, #{}} = shorten_url(construct_params(<<"https://localhost/hack?id=42">>), C1),
@@ -229,9 +240,12 @@ fordidden_source_url(C) ->
     {ok, 201, _, #{}} = shorten_url(construct_params(<<"ftp://ftp.hp.com/pub/hpcp/newsletter_july2003">>), C1).
 
 url_expired(C) ->
-    mock_services([
-        {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
-    ], C),
+    mock_services(
+        [
+            {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
+        ],
+        C
+    ),
     C1 = set_api_auth_token(url_expired, [read, write], C),
     Params = construct_params(<<"https://oops.io/">>, 1),
     {ok, 201, _, #{<<"id">> := ID, <<"shortenedUrl">> := ShortUrl}} = shorten_url(Params, C1),
@@ -241,9 +255,12 @@ url_expired(C) ->
     {ok, 404, _, _} = hackney:request(get, ShortUrl).
 
 always_unique_url(C) ->
-    mock_services([
-        {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
-    ], C),
+    mock_services(
+        [
+            {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
+        ],
+        C
+    ),
     C1 = set_api_auth_token(always_unique_url, [read, write], C),
     N = 42,
     Params = construct_params(<<"https://oops.io/">>, 3600),
@@ -262,9 +279,12 @@ always_unique_url(C) ->
 -spec supported_cors_header(config()) -> _.
 
 unsupported_cors_method(C) ->
-    mock_services([
-        {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
-    ], C),
+    mock_services(
+        [
+            {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
+        ],
+        C
+    ),
     SourceUrl = <<"https://oops.io/">>,
     Params = construct_params(SourceUrl),
     C1 = set_api_auth_token(unsupported_cors_method, [read, write], C),
@@ -274,9 +294,12 @@ unsupported_cors_method(C) ->
     false = lists:member(<<"access-control-allow-methods">>, Headers).
 
 supported_cors_method(C) ->
-    mock_services([
-        {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
-    ], C),
+    mock_services(
+        [
+            {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
+        ],
+        C
+    ),
     SourceUrl = <<"https://oops.io/">>,
     Params = construct_params(SourceUrl),
     C1 = set_api_auth_token(supported_cors_method, [read, write], C),
@@ -288,9 +311,12 @@ supported_cors_method(C) ->
     Allowed = binary:split(Returned, <<",">>, [global]).
 
 supported_cors_header(C) ->
-    mock_services([
-        {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
-    ], C),
+    mock_services(
+        [
+            {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
+        ],
+        C
+    ),
     SourceUrl = <<"https://oops.io/">>,
     Params = construct_params(SourceUrl),
     C1 = set_api_auth_token(supported_cors_header, [read, write], C),
@@ -307,9 +333,12 @@ supported_cors_header(C) ->
     [_ | Allowed] = binary:split(Returned, <<",">>, [global]).
 
 unsupported_cors_header(C) ->
-    mock_services([
-        {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
-    ], C),
+    mock_services(
+        [
+            {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
+        ],
+        C
+    ),
     SourceUrl = <<"https://oops.io/">>,
     Params = construct_params(SourceUrl),
     C1 = set_api_auth_token(unsupported_cors_header, [read, write], C),
@@ -346,9 +375,12 @@ woody_timeout_test(C) ->
             <<"http://invalid_url:8022/v1/automaton">>
         )
     ),
-    mock_services([
-        {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
-    ], C),
+    mock_services(
+        [
+            {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
+        ],
+        C
+    ),
     C2 = set_api_auth_token(woody_timeout_test, [read, write], C),
     SourceUrl = <<"https://example.com/">>,
     Params = construct_params(SourceUrl),
@@ -440,10 +472,14 @@ append_request_id(Params = #{header := Headers}) ->
 format_ts(Ts) ->
     genlib_rfc3339:format(Ts, second).
 
-get_operation_id(#bdcs_Context{fragments = #{<<"shortener">> := #bctx_ContextFragment{
-    type = v1_thrift_binary,
-    content = Fragment
-}}}) ->
+get_operation_id(#bdcs_Context{
+    fragments = #{
+        <<"shortener">> := #bctx_ContextFragment{
+            type = v1_thrift_binary,
+            content = Fragment
+        }
+    }
+}) ->
     case decode(Fragment) of
         {error, _} = Error ->
             error(Error);
@@ -470,10 +506,10 @@ decode(Content) ->
 
 %%
 
--define(SHORTENER_IP,        "::").
--define(SHORTENER_PORT,      8080).
+-define(SHORTENER_IP, "::").
+-define(SHORTENER_PORT, 8080).
 -define(SHORTENER_HOST_NAME, "localhost").
--define(SHORTENER_URL,       ?SHORTENER_HOST_NAME ++ ":" ++ integer_to_list(?SHORTENER_PORT)).
+-define(SHORTENER_URL, ?SHORTENER_HOST_NAME ++ ":" ++ integer_to_list(?SHORTENER_PORT)).
 
 mock_services(Services, SupOrConfig) ->
     maps:map(fun set_cfg/2, mock_services_(Services, SupOrConfig)).
@@ -489,7 +525,6 @@ set_cfg(Service = bouncer, Url) ->
 
 mock_services_(Services, Config) when is_list(Config) ->
     mock_services_(Services, ?config(test_sup, Config));
-
 mock_services_(Services, SupPid) when is_pid(SupPid) ->
     Name = lists:map(fun get_service_name/1, Services),
 
@@ -507,7 +542,7 @@ mock_services_(Services, SupPid) when is_pid(SupPid) ->
     {ok, _} = supervisor:start_child(SupPid, ChildSpec),
 
     lists:foldl(
-        fun (Service, Acc) ->
+        fun(Service, Acc) ->
             ServiceName = get_service_name(Service),
             case ServiceName of
                 bouncer ->
@@ -603,8 +638,8 @@ get_app_config(Port, Netloc, PemFile, AutomatonUrl) ->
                     % default value is 'finish'
                     % for more info look genlib_retry :: strategy()
                     % https://github.com/rbkmoney/genlib/blob/master/src/genlib_retry.erl#L19
-                    'Judge'   => {linear, 3, 1000},
-                    '_'     => finish
+                    'Judge' => {linear, 3, 1000},
+                    '_' => finish
                 }
             }
         }}

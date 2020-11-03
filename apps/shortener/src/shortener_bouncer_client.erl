@@ -43,9 +43,7 @@
 -export_type([judge_context/0]).
 -export_type([context_builder/0]).
 
--spec judge(judge_context(), woody_context()) ->
-    boolean().
-
+-spec judge(judge_context(), woody_context()) -> boolean().
 judge(JudgeContext, WoodyContext) ->
     case judge_(JudgeContext, WoodyContext) of
         {ok, Judgement} ->
@@ -59,7 +57,6 @@ judge(JudgeContext, WoodyContext) ->
     | {error,
         {ruleset, notfound | invalid}
         | {context, invalid}}.
-
 judge_(JudgeContext, WoodyContext) ->
     Context = collect_judge_context(JudgeContext),
     case call_service(bouncer, 'Judge', {<<"service/authz/api">>, Context}, WoodyContext) of
@@ -77,19 +74,24 @@ judge_(JudgeContext, WoodyContext) ->
 
 collect_judge_context(#{builders := Builders}) ->
     Type = {struct, struct, {bouncer_context_v1_thrift, 'ContextFragment'}},
-    Fragments = lists:foldl(fun(Builder, Acc0) ->
-        {FragmentID, Fragment} = Builder(?BLANK_CONTEXT),
-        Acc0#{FragmentID => #bctx_ContextFragment{
-            type = v1_thrift_binary,
-            content = encode_context_fragment(Type, Fragment)
-        }}
-    end, #{}, Builders),
+    Fragments = lists:foldl(
+        fun(Builder, Acc0) ->
+            {FragmentID, Fragment} = Builder(?BLANK_CONTEXT),
+            Acc0#{
+                FragmentID => #bctx_ContextFragment{
+                    type = v1_thrift_binary,
+                    content = encode_context_fragment(Type, Fragment)
+                }
+            }
+        end,
+        #{},
+        Builders
+    ),
     #bdcs_Context{fragments = Fragments}.
 
 %% Builders
 
--spec make_env_context_builder() ->
-    context_builder().
+-spec make_env_context_builder() -> context_builder().
 make_env_context_builder() ->
     fun(BlankContext) ->
         {<<"env">>, BlankContext#bctx_v1_ContextFragment{
@@ -99,8 +101,7 @@ make_env_context_builder() ->
         }}
     end.
 
--spec make_auth_context_builder(auth_method(), timestamp() | undefined) ->
-    context_builder().
+-spec make_auth_context_builder(auth_method(), timestamp() | undefined) -> context_builder().
 make_auth_context_builder(Method, Expiration) ->
     fun(BlankContext) ->
         {<<"auth">>, BlankContext#bctx_v1_ContextFragment{
@@ -116,8 +117,7 @@ maybe_format_time(undefined) ->
 maybe_format_time(Expiration) ->
     genlib_rfc3339:format(Expiration, second).
 
--spec make_user_context_builder(user_id(), woody_context()) ->
-    context_builder().
+-spec make_user_context_builder(user_id(), woody_context()) -> context_builder().
 make_user_context_builder(UserID, _WoodyContext) ->
     %% TODO add org managment call here
     fun(BlankContext) ->
@@ -138,15 +138,15 @@ make_user_context_builder(UserID, _WoodyContext) ->
         }}
     end.
 
--spec make_requester_context_builder(ip()) ->
-    context_builder().
+-spec make_requester_context_builder(ip()) -> context_builder().
 make_requester_context_builder(IP0) ->
-    IP1 = case IP0 of
-        undefined ->
-            undefined;
-        IP0 ->
-            list_to_binary(IP0)
-    end,
+    IP1 =
+        case IP0 of
+            undefined ->
+                undefined;
+            IP0 ->
+                list_to_binary(IP0)
+        end,
     fun(BlankContext) ->
         {<<"requester">>, BlankContext#bctx_v1_ContextFragment{
             requester = #bctx_v1_Requester{
@@ -155,20 +155,21 @@ make_requester_context_builder(IP0) ->
         }}
     end.
 
--spec make_shortener_context_builder(operation_id(), id() | undefined, owner() | undefined) ->
-    context_builder().
+-spec make_shortener_context_builder(operation_id(), id() | undefined, owner() | undefined) -> context_builder().
 make_shortener_context_builder(OperationID, ID, OwnerID) ->
     fun(BlankContext) ->
         {<<"shortener">>, BlankContext#bctx_v1_ContextFragment{
-            shortener = #bctx_v1_ContextUrlShortener{op = #bctx_v1_UrlShortenerOperation{
-                id = OperationID,
-                shortened_url = #bctx_v1_ShortenedUrl{
-                    id = ID,
-                    owner = #bctx_v1_Entity{
-                        id = OwnerID
+            shortener = #bctx_v1_ContextUrlShortener{
+                op = #bctx_v1_UrlShortenerOperation{
+                    id = OperationID,
+                    shortened_url = #bctx_v1_ShortenedUrl{
+                        id = ID,
+                        owner = #bctx_v1_Entity{
+                            id = OwnerID
+                        }
                     }
                 }
-            }}
+            }
         }}
     end.
 
@@ -190,15 +191,11 @@ encode_context_fragment(Type, ContextFragment) ->
 
 %%
 
--spec call_service(service_name(), woody:func(), tuple(), woody_context:ctx()) ->
-    woody:result().
-
+-spec call_service(service_name(), woody:func(), tuple(), woody_context:ctx()) -> woody:result().
 call_service(ServiceName, Function, Args, Context) ->
     call_service(ServiceName, Function, Args, Context, scoper_woody_event_handler).
 
--spec call_service(service_name(), woody:func(), tuple(), woody_context:ctx(), woody:ev_handler()) ->
-    woody:result().
-
+-spec call_service(service_name(), woody:func(), tuple(), woody_context:ctx(), woody:ev_handler()) -> woody:result().
 call_service(ServiceName, Function, Args, Context0, EventHandler) ->
     Deadline = get_service_deadline(ServiceName),
     Context1 = set_deadline(Deadline, Context0),
@@ -216,8 +213,8 @@ call_service(ServiceName, Function, Args, Context, EventHandler, Retry) ->
             Context
         )
     catch
-        error:{woody_error, {_Source, Class, _Details}} = Error
-        when Class =:= resource_unavailable orelse Class =:= result_unknown
+        error:{woody_error, {_Source, Class, _Details}} = Error when
+            Class =:= resource_unavailable orelse Class =:= result_unknown
         ->
             NextRetry = apply_retry_strategy(Retry, Error, Context),
             call_service(ServiceName, Function, Args, Context, EventHandler, NextRetry)
@@ -252,12 +249,10 @@ get_service_client_url(ServiceName) ->
     maps:get(url, get_service_client_config(ServiceName), undefined).
 
 -spec get_service_modname(service_name()) -> woody:service().
-
 get_service_modname(bouncer) ->
     {bouncer_decisions_thrift, 'Arbiter'}.
 
 -spec get_service_deadline(service_name()) -> undefined | woody_deadline:deadline().
-
 get_service_deadline(ServiceName) ->
     ServiceClient = get_service_client_config(ServiceName),
     Timeout = maps:get(deadline, ServiceClient, ?DEFAULT_DEADLINE),
