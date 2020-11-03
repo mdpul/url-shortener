@@ -48,16 +48,18 @@ authorize_api_key(_OperationID, bearer, Token) ->
     Context :: context(),
     WoodyCtx :: woody_context:ctx(),
     IpAddress :: string() | undefined.
-authorize_operation(OperationID, Slug, {{SubjectID, _ACL}, _Claims = #{<<"exp">> := Exp}}, WoodyCtx, IpAddress) ->
+% authorize_operation(_OperationID, _Slug, {{_SubjectID, _ACL}, _Claims}, _WoodyCtx, _IpAddress) ->
+%     ok.
+authorize_operation(OperationID, Slug, {{SubjectID, _ACL}, _Claims}, WoodyCtx, IpAddress) ->
     Owner = get_slug_owner(Slug),
     ID = get_slug_id(Slug),
     JudgeContext = #{
         builders => [
             shortener_bouncer:make_env_context_builder(),
-            shortener_bouncer:make_auth_context_builder(<<"SessionToken">>, Exp),
+            shortener_bouncer:make_auth_context_builder(<<"SessionToken">>, undefined),
             shortener_bouncer:make_user_context_builder(SubjectID, WoodyCtx),
             shortener_bouncer:make_requester_context_builder(IpAddress),
-            shortener_bouncer:make_shortener_context_builder(term_to_binary(OperationID), ID, Owner)
+            shortener_bouncer:make_shortener_context_builder(genlib:to_binary(OperationID), ID, Owner)
         ]
     },
     case shortener_bouncer:judge(JudgeContext, WoodyCtx) of

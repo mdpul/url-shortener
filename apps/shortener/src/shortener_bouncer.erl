@@ -61,8 +61,8 @@ judge(JudgeContext, WoodyContext) ->
         | {context, invalid}}.
 
 judge_(JudgeContext, WoodyContext) ->
-    Args = collect_judge_context(JudgeContext),
-    case call_service(bouncer, 'Judge', [Args], WoodyContext) of
+    Context = collect_judge_context(JudgeContext),
+    case call_service(bouncer, 'Judge', {<<"service/authz/api">>, Context}, WoodyContext) of
         {ok, Judgement} ->
             {ok, parse_judgement(Judgement)};
         {exception, #bdcs_RulesetNotFound{}} ->
@@ -77,13 +77,14 @@ judge_(JudgeContext, WoodyContext) ->
 
 collect_judge_context(#{builders := Builders}) ->
     Type = {struct, struct, {bouncer_context_v1_thrift, 'ContextFragment'}},
-    lists:foldl(fun(Builder, Acc0) ->
+    Fragments = lists:foldl(fun(Builder, Acc0) ->
         {FragmentID, Fragment} = Builder(?BLANK_CONTEXT),
         Acc0#{FragmentID => #bctx_ContextFragment{
             type = v1_thrift_binary,
-            content = serialize(Type, Fragment)
+            content = encode_context_fragment(Type, Fragment)
         }}
-    end, #{}, Builders).
+    end, #{}, Builders),
+    #bdcs_Context{fragments = Fragments}.
 
 %% Builders
 
@@ -98,17 +99,22 @@ make_env_context_builder() ->
         }}
     end.
 
--spec make_auth_context_builder(auth_method(), timestamp()) ->
+-spec make_auth_context_builder(auth_method(), timestamp() | undefined) ->
     context_builder().
 make_auth_context_builder(Method, Expiration) ->
     fun(BlankContext) ->
         {<<"auth">>, BlankContext#bctx_v1_ContextFragment{
             auth = #bctx_v1_Auth{
                 method = Method,
-                expiration = genlib_rfc3339:format(Expiration, second)
+                expiration = maybe_format_time(Expiration)
             }
         }}
     end.
+
+maybe_format_time(undefined) ->
+    undefined;
+maybe_format_time(Expiration) ->
+    genlib_rfc3339:format(Expiration, second).
 
 -spec make_user_context_builder(user_id(), woody_context()) ->
     context_builder().
@@ -175,31 +181,22 @@ parse_judgement(#bdcs_Judgement{resolution = forbidden}) ->
 
 %%
 
--spec serialize(_ThriftType, term()) -> binary().
-
-serialize(Type, Data) ->
-    {ok, Trans} = thrift_membuffer_transport:new(),
-    {ok, Proto} = new_protocol(Trans),
-    case thrift_protocol:write(Proto, {Type, Data}) of
-        {NewProto, ok} ->
-            {_, {ok, Result}} = thrift_protocol:close_transport(NewProto),
-            Result;
-        {_NewProto, {error, Reason}} ->
-            erlang:error({thrift, {protocol, Reason}})
+encode_context_fragment(Type, ContextFragment) ->
+    Codec = thrift_strict_binary_codec:new(),
+    case thrift_strict_binary_codec:write(Codec, Type, ContextFragment) of
+        {ok, Codec1} ->
+            thrift_strict_binary_codec:close(Codec1)
     end.
-
-new_protocol(Trans) ->
-    thrift_binary_protocol:new(Trans, [{strict_read, true}, {strict_write, true}]).
 
 %%
 
--spec call_service(service_name(), woody:func(), [term()], woody_context:ctx()) ->
+-spec call_service(service_name(), woody:func(), tuple(), woody_context:ctx()) ->
     woody:result().
 
 call_service(ServiceName, Function, Args, Context) ->
     call_service(ServiceName, Function, Args, Context, scoper_woody_event_handler).
 
--spec call_service(service_name(), woody:func(), [term()], woody_context:ctx(), woody:ev_handler()) ->
+-spec call_service(service_name(), woody:func(), tuple(), woody_context:ctx(), woody:ev_handler()) ->
     woody:result().
 
 call_service(ServiceName, Function, Args, Context0, EventHandler) ->
@@ -211,7 +208,7 @@ call_service(ServiceName, Function, Args, Context0, EventHandler) ->
 call_service(ServiceName, Function, Args, Context, EventHandler, Retry) ->
     Url = get_service_url(ServiceName),
     Service = get_service_modname(ServiceName),
-    Request = {Service, Function, {bin, term_to_binary(Args)}},
+    Request = {Service, Function, Args},
     try
         woody_client:call(
             Request,
