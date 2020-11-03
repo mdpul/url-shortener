@@ -478,11 +478,13 @@ decode(Content) ->
 mock_services(Services, SupOrConfig) ->
     maps:map(fun set_cfg/2, mock_services_(Services, SupOrConfig)).
 
-set_cfg(bouncer, Urls) ->
+set_cfg(Service = bouncer, Url) ->
+    {ok, Clients} = application:get_env(shortener, service_clients),
+    #{Service := BouncerCfg} = Clients,
     ok = application:set_env(
         shortener,
-        service_urls,
-        Urls
+        service_clients,
+        Clients#{Service => BouncerCfg#{url => Url}}
     ).
 
 mock_services_(Services, Config) when is_list(Config) ->
@@ -509,7 +511,7 @@ mock_services_(Services, SupPid) when is_pid(SupPid) ->
             ServiceName = get_service_name(Service),
             case ServiceName of
                 bouncer ->
-                    Acc#{ServiceName => #{ServiceName => make_url(ServiceName, Port)}}
+                    Acc#{ServiceName => make_url(ServiceName, Port)}
             end
         end,
         #{},
@@ -592,9 +594,18 @@ get_app_config(Port, Netloc, PemFile, AutomatonUrl) ->
                     'Remove' => {linear, 3, 1000},
                     '_' => finish
                 }
+            },
+            bouncer => #{
+                url => <<"http://bouncer:8022/">>,
+                retries => #{
+                    % function => retry strategy
+                    % '_' work as "any"
+                    % default value is 'finish'
+                    % for more info look genlib_retry :: strategy()
+                    % https://github.com/rbkmoney/genlib/blob/master/src/genlib_retry.erl#L19
+                    'Judge'   => {linear, 3, 1000},
+                    '_'     => finish
+                }
             }
-        }},
-        {service_urls, #{
-            bouncer => "http://bouncer:8022/"
         }}
     ].

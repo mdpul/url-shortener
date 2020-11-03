@@ -38,10 +38,9 @@ authorize_api_key(OperationID, ApiKey, _Opts) ->
 handle_request(OperationID, Req, Context, _Opts) ->
     try
         AuthContext = get_auth_context(Context),
-        IpAddress = get_peer(Context),
         WoodyCtx = create_woody_ctx(Req, AuthContext),
         Slug = prefetch_slug(Req, WoodyCtx),
-        case shortener_auth:authorize_operation(OperationID, Slug, AuthContext, WoodyCtx, IpAddress) of
+        case shortener_auth:authorize_operation(OperationID, Slug, Context, WoodyCtx) of
             ok ->
                 SubjectID = get_subject_id(AuthContext),
                 process_request(OperationID, Req, Slug, SubjectID, WoodyCtx);
@@ -105,21 +104,6 @@ get_claim(ClaimName, {_Subject, Claims}, Default) ->
 
 get_auth_context(#{auth_context := AuthContext}) ->
     AuthContext.
-
-get_peer(#{peer := Peer}) ->
-    case maps:get(ip_address, Peer, undefined) of
-        undefined ->
-            undefined;
-        IP ->
-            case inet:ntoa(IP) of
-                {error, _} ->
-                    undefined;
-                Address ->
-                    Address
-            end
-    end;
-get_peer(_) ->
-    undefined.
 
 handle_woody_error(_Source, result_unexpected, _Details) ->
     {500, #{}, <<>>};

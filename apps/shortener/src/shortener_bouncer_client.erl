@@ -1,4 +1,4 @@
--module(shortener_bouncer).
+-module(shortener_bouncer_client).
 
 -include_lib("bouncer_proto/include/bouncer_decisions_thrift.hrl").
 -include_lib("bouncer_proto/include/bouncer_context_v1_thrift.hrl").
@@ -15,7 +15,8 @@
 %%
 
 -define(APP, shortener).
--define(BLANK_CONTEXT, #bctx_v1_ContextFragment{vsn = 1}).
+-define(BLANK_CONTEXT, #bctx_v1_ContextFragment{}).
+-define(DEFAULT_DEADLINE, 5000).
 
 %%
 
@@ -49,9 +50,8 @@ judge(JudgeContext, WoodyContext) ->
     case judge_(JudgeContext, WoodyContext) of
         {ok, Judgement} ->
             Judgement;
-        %% TODO mb 500 on error here (error only caused by miss config)
-        _ ->
-            false
+        Error ->
+            erlang:error(Error)
     end.
 
 -spec judge_(judge_context(), woody_context()) ->
@@ -64,7 +64,7 @@ judge_(JudgeContext, WoodyContext) ->
     Context = collect_judge_context(JudgeContext),
     case call_service(bouncer, 'Judge', {<<"service/authz/api">>, Context}, WoodyContext) of
         {ok, Judgement} ->
-            {ok, parse_judgement(Judgement)};
+            {ok, is_judgement_allows(Judgement)};
         {exception, #bdcs_RulesetNotFound{}} ->
             {error, {ruleset, notfound}};
         {exception, #bdcs_InvalidRuleset{}} ->
@@ -174,9 +174,9 @@ make_shortener_context_builder(OperationID, ID, OwnerID) ->
 
 %%
 
-parse_judgement(#bdcs_Judgement{resolution = allowed}) ->
+is_judgement_allows(#bdcs_Judgement{resolution = allowed}) ->
     true;
-parse_judgement(#bdcs_Judgement{resolution = forbidden}) ->
+is_judgement_allows(#bdcs_Judgement{resolution = forbidden}) ->
     false.
 
 %%
@@ -206,7 +206,7 @@ call_service(ServiceName, Function, Args, Context0, EventHandler) ->
     call_service(ServiceName, Function, Args, Context1, EventHandler, Retry).
 
 call_service(ServiceName, Function, Args, Context, EventHandler, Retry) ->
-    Url = get_service_url(ServiceName),
+    Url = get_service_client_url(ServiceName),
     Service = get_service_modname(ServiceName),
     Request = {Service, Function, Args},
     try
@@ -244,8 +244,12 @@ apply_retry_step({wait, Timeout, Retry}, Deadline0, Error) ->
             Retry
     end.
 
-get_service_url(ServiceName) ->
-    maps:get(ServiceName, genlib_app:env(?APP, service_urls)).
+get_service_client_config(ServiceName) ->
+    ServiceClients = genlib_app:env(shortener, service_clients, #{}),
+    maps:get(ServiceName, ServiceClients, #{}).
+
+get_service_client_url(ServiceName) ->
+    maps:get(url, get_service_client_config(ServiceName), undefined).
 
 -spec get_service_modname(service_name()) -> woody:service().
 
@@ -255,13 +259,9 @@ get_service_modname(bouncer) ->
 -spec get_service_deadline(service_name()) -> undefined | woody_deadline:deadline().
 
 get_service_deadline(ServiceName) ->
-    ServiceDeadlines = genlib_app:env(?APP, api_deadlines, #{}),
-    case maps:get(ServiceName, ServiceDeadlines, undefined) of
-        Timeout when is_integer(Timeout) andalso Timeout >= 0 ->
-            woody_deadline:from_timeout(Timeout);
-        undefined ->
-            undefined
-    end.
+    ServiceClient = get_service_client_config(ServiceName),
+    Timeout = maps:get(deadline, ServiceClient, ?DEFAULT_DEADLINE),
+    woody_deadline:from_timeout(Timeout).
 
 set_deadline(Deadline, Context) ->
     case woody_context:get_deadline(Context) of
