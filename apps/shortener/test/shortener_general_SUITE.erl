@@ -167,7 +167,7 @@ insufficient_permissions(C) ->
         ],
         C
     ),
-    C1 = set_api_auth_token(insufficient_permissions, [], C),
+    C1 = set_api_auth_token(insufficient_permissions, C),
     Params = construct_params(<<"https://oops.io/">>),
     {ok, 403, _, _} = shorten_url(Params, C1),
     {ok, 403, _, _} = delete_shortened_url(<<"42">>, C1),
@@ -189,12 +189,11 @@ readonly_permissions(C) ->
         ],
         C
     ),
-    C1 = set_api_auth_token(readonly_permissions, [read, write], C),
+    C1 = set_api_auth_token(readonly_permissions, C),
     Params = construct_params(<<"https://oops.io/">>),
     {ok, 201, _, #{<<"id">> := ID}} = shorten_url(Params, C1),
-    C2 = set_api_auth_token(readonly_permissions, [read], C1),
-    {ok, 200, _, #{<<"id">> := ID}} = get_shortened_url(ID, C2),
-    {ok, 403, _, _} = delete_shortened_url(ID, C2).
+    {ok, 200, _, #{<<"id">> := ID}} = get_shortened_url(ID, C1),
+    {ok, 403, _, _} = delete_shortened_url(ID, C1).
 
 successful_redirect(C) ->
     mock_services(
@@ -203,7 +202,7 @@ successful_redirect(C) ->
         ],
         C
     ),
-    C1 = set_api_auth_token(successful_redirect, [read, write], C),
+    C1 = set_api_auth_token(successful_redirect, C),
     SourceUrl = <<"https://example.com/">>,
     Params = construct_params(SourceUrl),
     {ok, 201, _, #{<<"id">> := ID, <<"shortenedUrl">> := ShortUrl}} = shorten_url(Params, C1),
@@ -218,7 +217,7 @@ successful_delete(C) ->
         ],
         C
     ),
-    C1 = set_api_auth_token(successful_delete, [read, write], C),
+    C1 = set_api_auth_token(successful_delete, C),
     Params = construct_params(<<"https://oops.io/">>),
     {ok, 201, _, #{<<"id">> := ID, <<"shortenedUrl">> := ShortUrl}} = shorten_url(Params, C1),
     {ok, 204, _, _} = delete_shortened_url(ID, C1),
@@ -232,7 +231,7 @@ fordidden_source_url(C) ->
         ],
         C
     ),
-    C1 = set_api_auth_token(fordidden_source_url, [read, write], C),
+    C1 = set_api_auth_token(fordidden_source_url, C),
     {ok, 201, _, #{}} = shorten_url(construct_params(<<"http://localhost/hack?id=42">>), C1),
     {ok, 201, _, #{}} = shorten_url(construct_params(<<"https://localhost/hack?id=42">>), C1),
     {ok, 400, _, #{}} = shorten_url(construct_params(<<"http://example.io/">>), C1),
@@ -246,7 +245,7 @@ url_expired(C) ->
         ],
         C
     ),
-    C1 = set_api_auth_token(url_expired, [read, write], C),
+    C1 = set_api_auth_token(url_expired, C),
     Params = construct_params(<<"https://oops.io/">>, 1),
     {ok, 201, _, #{<<"id">> := ID, <<"shortenedUrl">> := ShortUrl}} = shorten_url(Params, C1),
     {ok, 200, _, #{<<"shortenedUrl">> := ShortUrl}} = get_shortened_url(ID, C1),
@@ -261,7 +260,7 @@ always_unique_url(C) ->
         ],
         C
     ),
-    C1 = set_api_auth_token(always_unique_url, [read, write], C),
+    C1 = set_api_auth_token(always_unique_url, C),
     N = 42,
     Params = construct_params(<<"https://oops.io/">>, 3600),
     {IDs, ShortUrls} = lists:unzip([
@@ -287,7 +286,7 @@ unsupported_cors_method(C) ->
     ),
     SourceUrl = <<"https://oops.io/">>,
     Params = construct_params(SourceUrl),
-    C1 = set_api_auth_token(unsupported_cors_method, [read, write], C),
+    C1 = set_api_auth_token(unsupported_cors_method, C),
     {ok, 201, _, #{<<"shortenedUrl">> := ShortUrl}} = shorten_url(Params, C1),
     ReqHeaders = [{<<"origin">>, <<"localhost">>}, {<<"access-control-request-method">>, <<"PATCH">>}],
     {ok, 200, Headers, _} = hackney:request(options, ShortUrl, ReqHeaders),
@@ -302,7 +301,7 @@ supported_cors_method(C) ->
     ),
     SourceUrl = <<"https://oops.io/">>,
     Params = construct_params(SourceUrl),
-    C1 = set_api_auth_token(supported_cors_method, [read, write], C),
+    C1 = set_api_auth_token(supported_cors_method, C),
     {ok, 201, _, #{<<"shortenedUrl">> := ShortUrl}} = shorten_url(Params, C1),
     ReqHeaders = [{<<"origin">>, <<"localhost">>}, {<<"access-control-request-method">>, <<"GET">>}],
     {ok, 200, Headers, _} = hackney:request(options, ShortUrl, ReqHeaders),
@@ -319,7 +318,7 @@ supported_cors_header(C) ->
     ),
     SourceUrl = <<"https://oops.io/">>,
     Params = construct_params(SourceUrl),
-    C1 = set_api_auth_token(supported_cors_header, [read, write], C),
+    C1 = set_api_auth_token(supported_cors_header, C),
     {ok, 201, _, #{<<"shortenedUrl">> := ShortUrl}} = shorten_url(Params, C1),
     ReqHeaders = [
         {<<"origin">>, <<"localhost">>},
@@ -341,7 +340,7 @@ unsupported_cors_header(C) ->
     ),
     SourceUrl = <<"https://oops.io/">>,
     Params = construct_params(SourceUrl),
-    C1 = set_api_auth_token(unsupported_cors_header, [read, write], C),
+    C1 = set_api_auth_token(unsupported_cors_header, C),
     {ok, 201, _, #{<<"shortenedUrl">> := ShortUrl}} = shorten_url(Params, C1),
     ReqHeaders = [
         {<<"origin">>, <<"localhost">>},
@@ -381,7 +380,7 @@ woody_timeout_test(C) ->
         ],
         C
     ),
-    C2 = set_api_auth_token(woody_timeout_test, [read, write], C),
+    C2 = set_api_auth_token(woody_timeout_test, C),
     SourceUrl = <<"https://example.com/">>,
     Params = construct_params(SourceUrl),
     {Time, {error, {invalid_response_code, 503}}} =
@@ -408,9 +407,9 @@ health_check_passing(C) ->
     genlib_app:stop_unload_applications(Apps).
 
 %%
-set_api_auth_token(Name, Permissions, C) ->
+set_api_auth_token(Name, C) ->
     UserID = genlib:to_binary(Name),
-    ACL = construct_shortener_acl(Permissions),
+    ACL = construct_shortener_acl([]),
     {ok, T} = shortener_authorizer_jwt:issue({{UserID, shortener_acl:from_list(ACL)}, #{}}, unlimited),
     lists:keystore(api_auth_token, 1, C, {api_auth_token, T}).
 
@@ -564,7 +563,7 @@ mock_service_handler({ServiceName, WoodyService, Fun}) ->
     mock_service_handler(ServiceName, WoodyService, Fun).
 
 mock_service_handler(ServiceName, WoodyService, Fun) ->
-    {make_path(ServiceName), {WoodyService, {dummy_service, #{function => Fun}}}}.
+    {make_path(ServiceName), {WoodyService, {shortener_dummy_service, #{function => Fun}}}}.
 
 get_service_modname(bouncer) ->
     {bouncer_decisions_thrift, 'Arbiter'}.

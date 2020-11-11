@@ -53,18 +53,18 @@ authorize_operation(OperationID, Slug, ReqContext, WoodyCtx) ->
     Owner = get_slug_owner(Slug),
     ID = get_slug_id(Slug),
     JudgeContext = #{
-        builders => [
-            shortener_bouncer_client:make_env_context_builder(),
-            shortener_bouncer_client:make_auth_context_builder(<<"SessionToken">>, undefined),
-            shortener_bouncer_client:make_user_context_builder(SubjectID, WoodyCtx),
-            shortener_bouncer_client:make_requester_context_builder(IpAddress),
-            shortener_bouncer_client:make_shortener_context_builder(genlib:to_binary(OperationID), ID, Owner)
+        fragments => [
+            shortener_bouncer_client:make_env_context_fragment(),
+            shortener_bouncer_client:make_auth_context_fragment(<<"SessionToken">>, undefined),
+            shortener_bouncer_client:make_user_context_fragment(SubjectID, WoodyCtx),
+            shortener_bouncer_client:make_requester_context_fragment(IpAddress),
+            shortener_bouncer_client:make_shortener_context_fragment(genlib:to_binary(OperationID), ID, Owner)
         ]
     },
     case shortener_bouncer_client:judge(JudgeContext, WoodyCtx) of
-        true ->
+        allowed ->
             ok;
-        false ->
+        forbidden ->
             {error, forbidden}
     end.
 

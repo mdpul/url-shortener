@@ -1,4 +1,4 @@
--module(dummy_service).
+-module(shortener_dummy_service).
 
 -behaviour(woody_server_thrift_handler).
 
