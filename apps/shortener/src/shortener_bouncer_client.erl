@@ -30,14 +30,17 @@
 -type woody_context() :: woody_context:ctx().
 
 -type context_fragment_id() :: binary().
--type context_fragment() :: {context_fragment_id(), bouncer_context_v1_thrift:'ContextFragment'()}.
--type encoded_context_fragment() :: {context_fragment_id(), bouncer_context_thrift:'ContextFragment'()}.
+-type bouncer_fragment() :: bouncer_context_v1_thrift:'ContextFragment'().
+-type encoded_bouncer_fragment() :: bouncer_context_thrift:'ContextFragment'().
+-type context_fragment() ::
+    {fragment, bouncer_fragment()} |
+    {encoded_fragment, encoded_bouncer_fragment()}.
+
+-type judge_context() :: #{
+    fragments => #{context_fragment_id() => context_fragment()}
+}.
 
 -type judgement() :: allowed | forbidden.
--type judge_context() :: #{
-    fragments => [context_fragment()],
-    encoded_fragments => [encoded_context_fragment()]
-}.
 
 -type service_name() :: atom().
 
@@ -45,7 +48,6 @@
 -export_type([judgement/0]).
 -export_type([judge_context/0]).
 -export_type([context_fragment/0]).
--export_type([encoded_context_fragment/0]).
 
 -spec judge(judge_context(), woody_context()) -> judgement().
 judge(JudgeContext, WoodyContext) ->
@@ -77,43 +79,29 @@ judge_(JudgeContext, WoodyContext) ->
 %%
 
 collect_judge_context(JudgeContext) ->
-    Fragments0 = collect_fragments(JudgeContext, #{}),
-    Fragments1 = collect_encoded_fragments(JudgeContext, Fragments0),
-    #bdcs_Context{fragments = Fragments1}.
+    #bdcs_Context{fragments = collect_fragments(JudgeContext, #{})}.
 
 collect_fragments(#{fragments := Fragments}, Context) ->
-    Type = {struct, struct, {bouncer_context_v1_thrift, 'ContextFragment'}},
-    lists:foldl(
-        fun({FragmentID, Fragment}, Acc0) ->
-            Acc0#{
-                FragmentID => #bctx_ContextFragment{
-                    type = v1_thrift_binary,
-                    content = encode_context_fragment(Type, Fragment)
-                }
-            }
-        end,
-        Context,
-        Fragments
-    );
+    maps:fold(fun collect_fragments_/3, Context, Fragments);
 collect_fragments(_, Context) ->
     Context.
 
-collect_encoded_fragments(#{encoded_fragments := EncodedFragments}, Context) ->
-    lists:foldl(
-        fun({FragmentID, EncodedFragment}, Acc0) ->
-            Acc0#{FragmentID => EncodedFragment}
-        end,
-        Context,
-        EncodedFragments
-    );
-collect_encoded_fragments(_, Context) ->
-    Context.
+collect_fragments_(FragmentID, {encoded_fragment, EncodedFragment}, Acc0) ->
+    Acc0#{FragmentID => EncodedFragment};
+collect_fragments_(FragmentID, {fragment, Fragment}, Acc0) ->
+    Type = {struct, struct, {bouncer_context_v1_thrift, 'ContextFragment'}},
+    Acc0#{
+        FragmentID => #bctx_ContextFragment{
+            type = v1_thrift_binary,
+            content = encode_context_fragment(Type, Fragment)
+        }
+    }.
 
 %% Fragment builders
 
 -spec make_env_context_fragment() -> context_fragment().
 make_env_context_fragment() ->
-    {<<"env">>, #bctx_v1_ContextFragment{
+    {fragment, #bctx_v1_ContextFragment{
         env = #bctx_v1_Environment{
             now = genlib_rfc3339:format(genlib_time:unow(), second)
         }
@@ -121,7 +109,7 @@ make_env_context_fragment() ->
 
 -spec make_auth_context_fragment(auth_method(), timestamp() | undefined) -> context_fragment().
 make_auth_context_fragment(Method, Expiration) ->
-    {<<"auth">>, #bctx_v1_ContextFragment{
+    {fragment, #bctx_v1_ContextFragment{
         auth = #bctx_v1_Auth{
             method = Method,
             expiration = maybe_format_time(Expiration)
@@ -136,7 +124,7 @@ maybe_format_time(Expiration) ->
 -spec make_user_context_fragment(user_id(), woody_context()) -> context_fragment().
 make_user_context_fragment(UserID, _WoodyContext) ->
     %% TODO add org managment call here
-    {<<"user">>, #bctx_v1_ContextFragment{
+    {fragment, #bctx_v1_ContextFragment{
         user = #bctx_v1_User{
             id = UserID,
             orgs = [
@@ -161,7 +149,7 @@ make_requester_context_fragment(IP0) ->
             IP0 ->
                 list_to_binary(IP0)
         end,
-    {<<"requester">>, #bctx_v1_ContextFragment{
+    {fragment, #bctx_v1_ContextFragment{
         requester = #bctx_v1_Requester{
             ip = IP1
         }
@@ -169,7 +157,7 @@ make_requester_context_fragment(IP0) ->
 
 -spec make_shortener_context_fragment(operation_id(), id() | undefined, owner() | undefined) -> context_fragment().
 make_shortener_context_fragment(OperationID, ID, OwnerID) ->
-    {<<"shortener">>, #bctx_v1_ContextFragment{
+    {fragment, #bctx_v1_ContextFragment{
         shortener = #bctx_v1_ContextUrlShortener{
             op = #bctx_v1_UrlShortenerOperation{
                 id = OperationID,
