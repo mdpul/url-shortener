@@ -13,9 +13,6 @@
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
--export([failed_authorization/1]).
--export([insufficient_permissions/1]).
--export([readonly_permissions/1]).
 -export([successful_redirect/1]).
 -export([successful_delete/1]).
 -export([fordidden_source_url/1]).
@@ -57,10 +54,6 @@ all() ->
 groups() ->
     [
         {general, [], [
-            failed_authorization,
-            insufficient_permissions,
-            readonly_permissions,
-
             successful_redirect,
             successful_delete,
             fordidden_source_url,
@@ -100,7 +93,7 @@ init_per_group(_Group, C) ->
     ShortenerApp =
         genlib_app:start_application_with(
             shortener,
-            get_app_config(
+            shortener_ct_helper:get_app_config(
                 ?config(port, C),
                 ?config(netloc, C),
                 get_keysource("keys/local/private.pem", C)
@@ -143,60 +136,14 @@ stop_mocked_service_sup(SupPid) ->
 
 %%
 
--spec failed_authorization(config()) -> _.
--spec insufficient_permissions(config()) -> _.
--spec readonly_permissions(config()) -> _.
-
 -spec successful_redirect(config()) -> _.
 -spec successful_delete(config()) -> _.
 -spec fordidden_source_url(config()) -> _.
 -spec url_expired(config()) -> _.
 -spec always_unique_url(config()) -> _.
 
-failed_authorization(C) ->
-    Params = construct_params(<<"https://oops.io/">>),
-    C1 = clean_api_auth_token(C),
-    {ok, 401, _, _} = shorten_url(Params, C1),
-    {ok, 401, _, _} = delete_shortened_url(<<"42">>, C1),
-    {ok, 401, _, _} = get_shortened_url(<<"42">>, C1).
-
-insufficient_permissions(C) ->
-    mock_services(
-        [
-            {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = forbidden}} end}
-        ],
-        C
-    ),
-    C1 = set_api_auth_token(insufficient_permissions, C),
-    Params = construct_params(<<"https://oops.io/">>),
-    {ok, 403, _, _} = shorten_url(Params, C1),
-    {ok, 403, _, _} = delete_shortened_url(<<"42">>, C1),
-    {ok, 403, _, _} = get_shortened_url(<<"42">>, C1).
-
-readonly_permissions(C) ->
-    mock_services(
-        [
-            {bouncer, fun('Judge', {_RulesetID, Fragments}) ->
-                case get_operation_id(Fragments) of
-                    <<"ShortenUrl">> ->
-                        {ok, #bdcs_Judgement{resolution = allowed}};
-                    <<"GetShortenedUrl">> ->
-                        {ok, #bdcs_Judgement{resolution = allowed}};
-                    <<"DeleteShortenedUrl">> ->
-                        {ok, #bdcs_Judgement{resolution = forbidden}}
-                end
-            end}
-        ],
-        C
-    ),
-    C1 = set_api_auth_token(readonly_permissions, C),
-    Params = construct_params(<<"https://oops.io/">>),
-    {ok, 201, _, #{<<"id">> := ID}} = shorten_url(Params, C1),
-    {ok, 200, _, #{<<"id">> := ID}} = get_shortened_url(ID, C1),
-    {ok, 403, _, _} = delete_shortened_url(ID, C1).
-
 successful_redirect(C) ->
-    mock_services(
+    shortener_ct_helper:mock_services(
         [
             {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
         ],
@@ -211,7 +158,7 @@ successful_redirect(C) ->
     {<<"location">>, SourceUrl} = lists:keyfind(<<"location">>, 1, Headers).
 
 successful_delete(C) ->
-    mock_services(
+    shortener_ct_helper:mock_services(
         [
             {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
         ],
@@ -225,7 +172,7 @@ successful_delete(C) ->
     {ok, 404, _, _} = hackney:request(get, ShortUrl).
 
 fordidden_source_url(C) ->
-    mock_services(
+    shortener_ct_helper:mock_services(
         [
             {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
         ],
@@ -239,7 +186,7 @@ fordidden_source_url(C) ->
     {ok, 201, _, #{}} = shorten_url(construct_params(<<"ftp://ftp.hp.com/pub/hpcp/newsletter_july2003">>), C1).
 
 url_expired(C) ->
-    mock_services(
+    shortener_ct_helper:mock_services(
         [
             {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
         ],
@@ -254,7 +201,7 @@ url_expired(C) ->
     {ok, 404, _, _} = hackney:request(get, ShortUrl).
 
 always_unique_url(C) ->
-    mock_services(
+    shortener_ct_helper:mock_services(
         [
             {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
         ],
@@ -278,7 +225,7 @@ always_unique_url(C) ->
 -spec supported_cors_header(config()) -> _.
 
 unsupported_cors_method(C) ->
-    mock_services(
+    shortener_ct_helper:mock_services(
         [
             {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
         ],
@@ -293,7 +240,7 @@ unsupported_cors_method(C) ->
     false = lists:member(<<"access-control-allow-methods">>, Headers).
 
 supported_cors_method(C) ->
-    mock_services(
+    shortener_ct_helper:mock_services(
         [
             {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
         ],
@@ -310,7 +257,7 @@ supported_cors_method(C) ->
     Allowed = binary:split(Returned, <<",">>, [global]).
 
 supported_cors_header(C) ->
-    mock_services(
+    shortener_ct_helper:mock_services(
         [
             {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
         ],
@@ -332,7 +279,7 @@ supported_cors_header(C) ->
     [_ | Allowed] = binary:split(Returned, <<",">>, [global]).
 
 unsupported_cors_header(C) ->
-    mock_services(
+    shortener_ct_helper:mock_services(
         [
             {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
         ],
@@ -367,14 +314,14 @@ construct_params(SourceUrl, Lifetime) ->
 woody_timeout_test(C) ->
     Apps = genlib_app:start_application_with(
         shortener,
-        get_app_config(
+        shortener_ct_helper:get_app_config(
             ?config(port, C),
             ?config(netloc, C),
             get_keysource("keys/local/private.pem", C),
             <<"http://invalid_url:8022/v1/automaton">>
         )
     ),
-    mock_services(
+    shortener_ct_helper:mock_services(
         [
             {bouncer, fun('Judge', _) -> {ok, #bdcs_Judgement{resolution = allowed}} end}
         ],
@@ -395,7 +342,7 @@ woody_timeout_test(C) ->
 health_check_passing(C) ->
     Apps = genlib_app:start_application_with(
         shortener,
-        get_app_config(
+        shortener_ct_helper:get_app_config(
             ?config(port, C),
             ?config(netloc, C),
             get_keysource("keys/local/private.pem", C)
@@ -412,9 +359,6 @@ set_api_auth_token(Name, C) ->
     ACL = construct_shortener_acl([]),
     {ok, T} = shortener_authorizer_jwt:issue({{UserID, shortener_acl:from_list(ACL)}, #{}}, unlimited),
     lists:keystore(api_auth_token, 1, C, {api_auth_token, T}).
-
-clean_api_auth_token(C) ->
-    lists:keydelete(api_auth_token, 1, C).
 
 construct_shortener_acl(Permissions) ->
     lists:map(fun(P) -> {['shortened-urls'], P} end, Permissions).
@@ -470,176 +414,3 @@ append_request_id(Params = #{header := Headers}) ->
 
 format_ts(Ts) ->
     genlib_rfc3339:format(Ts, second).
-
-get_operation_id(#bdcs_Context{
-    fragments = #{
-        <<"shortener">> := #bctx_ContextFragment{
-            type = v1_thrift_binary,
-            content = Fragment
-        }
-    }
-}) ->
-    case decode(Fragment) of
-        {error, _} = Error ->
-            error(Error);
-        #bctx_v1_ContextFragment{
-            shortener = #bctx_v1_ContextUrlShortener{op = #bctx_v1_UrlShortenerOperation{id = OperationID}}
-        } ->
-            OperationID
-    end.
-
-decode(Content) ->
-    Type = {struct, struct, {bouncer_context_v1_thrift, 'ContextFragment'}},
-    Codec = thrift_strict_binary_codec:new(Content),
-    case thrift_strict_binary_codec:read(Codec, Type) of
-        {ok, CtxThrift, Codec1} ->
-            case thrift_strict_binary_codec:close(Codec1) of
-                <<>> ->
-                    CtxThrift;
-                Leftovers ->
-                    {error, {excess_binary_data, Leftovers}}
-            end;
-        Error ->
-            Error
-    end.
-
-%%
-
--define(SHORTENER_IP, "::").
--define(SHORTENER_PORT, 8080).
--define(SHORTENER_HOST_NAME, "localhost").
--define(SHORTENER_URL, ?SHORTENER_HOST_NAME ++ ":" ++ integer_to_list(?SHORTENER_PORT)).
-
-mock_services(Services, SupOrConfig) ->
-    maps:map(fun set_cfg/2, mock_services_(Services, SupOrConfig)).
-
-set_cfg(Service = bouncer, Url) ->
-    {ok, Clients} = application:get_env(shortener, service_clients),
-    #{Service := BouncerCfg} = Clients,
-    ok = application:set_env(
-        shortener,
-        service_clients,
-        Clients#{Service => BouncerCfg#{url => Url}}
-    ).
-
-mock_services_(Services, Config) when is_list(Config) ->
-    mock_services_(Services, ?config(test_sup, Config));
-mock_services_(Services, SupPid) when is_pid(SupPid) ->
-    Name = lists:map(fun get_service_name/1, Services),
-
-    Port = get_random_port(),
-    {ok, IP} = inet:parse_address(?SHORTENER_IP),
-    ChildSpec = woody_server:child_spec(
-        {dummy, Name},
-        #{
-            ip => IP,
-            port => Port,
-            event_handler => scoper_woody_event_handler,
-            handlers => lists:map(fun mock_service_handler/1, Services)
-        }
-    ),
-    {ok, _} = supervisor:start_child(SupPid, ChildSpec),
-
-    lists:foldl(
-        fun(Service, Acc) ->
-            ServiceName = get_service_name(Service),
-            case ServiceName of
-                bouncer ->
-                    Acc#{ServiceName => make_url(ServiceName, Port)}
-            end
-        end,
-        #{},
-        Services
-    ).
-
-get_service_name({ServiceName, _Fun}) ->
-    ServiceName;
-get_service_name({ServiceName, _WoodyService, _Fun}) ->
-    ServiceName.
-
-mock_service_handler({ServiceName, Fun}) ->
-    mock_service_handler(ServiceName, get_service_modname(ServiceName), Fun);
-mock_service_handler({ServiceName, WoodyService, Fun}) ->
-    mock_service_handler(ServiceName, WoodyService, Fun).
-
-mock_service_handler(ServiceName, WoodyService, Fun) ->
-    {make_path(ServiceName), {WoodyService, {shortener_dummy_service, #{function => Fun}}}}.
-
-get_service_modname(bouncer) ->
-    {bouncer_decisions_thrift, 'Arbiter'}.
-
-% TODO not so failproof, ideally we need to bind socket first and then give to a ranch listener
-get_random_port() ->
-    rand:uniform(32768) + 32767.
-
-make_url(ServiceName, Port) ->
-    iolist_to_binary(["http://", ?SHORTENER_HOST_NAME, ":", integer_to_list(Port), make_path(ServiceName)]).
-
-make_path(ServiceName) ->
-    "/" ++ atom_to_list(ServiceName).
-
-%%
-
-get_app_config(Port, Netloc, PemFile) ->
-    get_app_config(Port, Netloc, PemFile, <<"http://machinegun:8022/v1/automaton">>).
-
-get_app_config(Port, Netloc, PemFile, AutomatonUrl) ->
-    [
-        {space_size, 8},
-        {hash_algorithm, sha256},
-        {api, #{
-            ip => "::",
-            port => Port,
-            authorizer => #{
-                signee => local,
-                keyset => #{
-                    local => {pem_file, PemFile}
-                }
-            },
-            source_url_whitelist => [
-                "https://*",
-                "ftp://*",
-                "http://localhost/*"
-            ],
-            short_url_template => #{
-                scheme => http,
-                netloc => Netloc,
-                path => "/r/e/d/i/r/"
-            }
-        }},
-        {processor, #{
-            ip => "::",
-            port => 8022
-        }},
-        {health_check, #{
-            service => {erl_health, service, [<<"shortener">>]}
-        }},
-        {service_clients, #{
-            automaton => #{
-                url => AutomatonUrl,
-                retries => #{
-                    % function => retry strategy
-                    % '_' work as "any"
-                    % default value is 'finish'
-                    % for more info look genlib_retry :: strategy()
-                    % https://github.com/rbkmoney/genlib/blob/master/src/genlib_retry.erl#L19
-                    'Start' => {linear, 3, 1000},
-                    'GetMachine' => {linear, 3, 1000},
-                    'Remove' => {linear, 3, 1000},
-                    '_' => finish
-                }
-            },
-            bouncer => #{
-                url => <<"http://bouncer:8022/">>,
-                retries => #{
-                    % function => retry strategy
-                    % '_' work as "any"
-                    % default value is 'finish'
-                    % for more info look genlib_retry :: strategy()
-                    % https://github.com/rbkmoney/genlib/blob/master/src/genlib_retry.erl#L19
-                    'Judge' => {linear, 3, 1000},
-                    '_' => finish
-                }
-            }
-        }}
-    ].
