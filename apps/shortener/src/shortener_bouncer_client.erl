@@ -33,8 +33,8 @@
 -type bouncer_fragment() :: bouncer_context_v1_thrift:'ContextFragment'().
 -type encoded_bouncer_fragment() :: bouncer_context_thrift:'ContextFragment'().
 -type context_fragment() ::
-    {fragment, bouncer_fragment()} |
-    {encoded_fragment, encoded_bouncer_fragment()}.
+    {fragment, bouncer_fragment()}
+    | {encoded_fragment, encoded_bouncer_fragment()}.
 
 -type judge_context() :: #{
     fragments => #{context_fragment_id() => context_fragment()}
